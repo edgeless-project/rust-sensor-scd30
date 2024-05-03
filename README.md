@@ -1,3 +1,9 @@
+# Fork Notes
+
+We temporarily forked this as we needed `embedded_hal` 1.0 support.
+Furthermore, a different probing mechanism and a delayed read mechanism (both inspired by the official driver) are required for this to work on the ESP32.
+We expect this fork to only be used in our specific application (Edgeless) and as a possible starting point for a proper upgrade of the upstream repository.
+
 # Rust Sensor SCD30
 
 A rust driver (and CLI utility) for the [scd30](https://www.sensirion.com/en/environmental-sensors/carbon-dioxide-sensors-co2/) CO2, Temperature and Humidity sensor.

@@ -4,19 +4,20 @@
 
 use core::fmt::Debug;
 
-use embedded_hal::blocking::i2c;
 use log::trace;
 
-use crate::{Error};
+use crate::Error;
 use crate::device::*;
 
 /// Base API for reading and writing to the device
 /// This should not be required by consumers, but is exposed to support alternate use (or in future provide ModBus support)
-pub trait Base<Err> {
+pub trait Base<Err, Delay> {
     /// Write a command to the device with optional data
     fn write_command(&mut self, command: Command, data: Option<u16>) -> Result<(), Error<Err>>;
     /// Read information from the device
     fn read_command(&mut self, command: Command, data: &mut [u8]) -> Result<(), Error<Err>>;
+    /// Read information from the device (wait after read command)
+    fn delayed_read_command(&mut self, command: Command, data: &mut [u8], delay: Option<&mut Delay>, delay_duration_us: u32) -> Result<(), Error<Err>>;
 }
 
 /// Helper for device CRC-8 calculation
@@ -43,9 +44,10 @@ pub fn crc8(data: &[u8]) -> u8 {
 }
 
 /// Base implementation for I2C devices
-impl <Conn, Err> Base<Err> for Conn where
-    Conn: i2c::Read<Error=Err> + i2c::Write<Error=Err> + i2c::WriteRead<Error=Err>,
+impl <Conn, Err, Delay> Base<Err, Delay> for Conn where
+    Conn: embedded_hal::i2c::I2c<Error = Err>,
     Err: Debug,
+    Delay: embedded_hal::delay::DelayNs
 {
     fn write_command(&mut self, command: Command, data: Option<u16>) -> Result<(), Error<Err>> {
         let c = command as u16;
@@ -74,6 +76,10 @@ impl <Conn, Err> Base<Err> for Conn where
     }
 
     fn read_command(&mut self, command: Command, data: &mut [u8]) -> Result<(), Error<Err>> {
+        self.delayed_read_command(command, data, None as Option<&mut Delay>, 0)
+    }
+
+    fn delayed_read_command(&mut self, command: Command, data: &mut [u8], delay: Option<&mut Delay>, delay_duration_us: u32) -> Result<(), Error<Err>> {
         // Write command to initialise read
         let c = command as u16;
         let cmd = [(c >> 8) as u8, (c & 0xFF) as u8];
@@ -83,6 +89,12 @@ impl <Conn, Err> Base<Err> for Conn where
         // First write the read command
         self.write(DEFAULT_ADDRESS | I2C_WRITE_FLAG, &cmd)
             .map_err(|e| Error::Conn(e) )?;
+
+        // This delay seems to be required by some methods and was taken from this:
+        // https://github.com/Sensirion/embedded-common/blob/f1766fefcb65b0724ae85d9cf75e6ae3eec69533/i2c/sensirion_i2c.c#L150
+        if let Some(delay) = delay {
+            delay.delay_us(delay_duration_us);
+        }
 
         // Then, read the data back
         self.read(DEFAULT_ADDRESS | I2C_READ_FLAG, data)
